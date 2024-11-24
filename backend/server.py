@@ -7,7 +7,7 @@ from transformers import BertModel, BertTokenizer
 
 from datetime import datetime, timedelta
 import os.path
-
+import requests
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -71,28 +71,98 @@ def get_dummy_embeddings(text):
 
 @app.route("/process", methods=["POST"])
 def process_text():
+    repeat_mapping = {3: "No", 2: "Monday", 7: "Tuesday", 8: "Wednesday", 6: "Thursday", 1: "Friday", 4: "Saturday", 5: "Sunday", 0: "Daily"}
+    relative_time_mapping = {1: "Morning", 0: "Afternoon", 2: "Night"}
+    exact_time_mapping = {0: "False", 1: "True"}
+
     try:
         data = request.json
         text = data.get("text","")
+        task_List = extract_tasks(text)
         # Step 4: Test the model with an example
+        calendar_elems = []
+        for task in task_List:
+            predicted_repeat, predicted_relative_time, predicted_exact_time = predict(task['text'])
+            # print(predicted_repeat)
+            # add_task_from_string(text) 
+            calendar_elems.append({
+            "Name": task["text"],
+            "Repeat": repeat_mapping[predicted_repeat], 
+            "Relative Timing": relative_time_mapping[predicted_relative_time], 
+            "Exact Time Present": exact_time_mapping[predicted_exact_time]
+            })
+            
+        print("Calender elems:", calendar_elems)
 
-        predicted_repeat, predicted_relative_time, predicted_exact_time = predict(text)
+        # call function to input each task into google calendar
+        for calendar_item in calendar_elems:
+            start = "6:00 PM"
+            end = "8:00 PM"
+            add_task_to_calendar(calendar_item["Name"], start, end)
 
-        # Map predictions to human-readable labels
-        repeat_mapping = {3: "No", 2: "Monday", 7: "Tuesday", 8: "Wednesday", 6: "Thursday", 1: "Friday", 4: "Saturday", 5: "Sunday", 0: "Daily"}
-        relative_time_mapping = {1: "Morning", 0: "Afternoon", 2: "Night"}
-        exact_time_mapping = {0: "False", 1: "True"}
-        add_task_from_string(text)
         return jsonify({
             "success": True,
-            "embeddings": [repeat_mapping[predicted_repeat], relative_time_mapping[predicted_relative_time], exact_time_mapping[predicted_exact_time]],
-            "message": "Text processed succesfully",
-            "text_length": len(text)
-        })
+            "calendar_elems": calendar_elems,
+            "message": "Text processed succesfully"
+            })
     
 
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+    
+
+
+def extract_tasks(transcription):
+    url = "https://api.cerebras.ai/v1/chat/completions"
+    token = "csk-5mjnmycyndxxwpe5xnwrp6jwmfwvd2fwctcdtje694nt9pw2"  # Replace with your API key
+
+    request_data = {
+        "model": "llama3.1-8b",
+        "stream": False,
+        "messages": [
+            {
+                "content": f"Extract tasks from the following text: {transcription}",
+                "role": "user",
+            },
+        ],
+        "temperature": 0,
+        "max_tokens": -1,
+        "seed": 0,
+        "top_p": 1,
+    }
+
+    try:
+        response = requests.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+            json=request_data,
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if data and "choices" in data and len(data["choices"]) > 0:
+            new_tasks = data["choices"][0]["message"]["content"]
+            numbered_tasks = [
+                task.lstrip("0123456789. ").strip()
+                for task in new_tasks.split("\n")
+                if task.strip() and task.strip()[0].isdigit()
+            ]
+            tasks = [
+                {"id": idx, "text": task, "completed": False}
+                for idx, task in enumerate(numbered_tasks, start=1)
+            ]
+            return tasks
+        else:
+            print("Unexpected response format:", data)
+            return None
+    except requests.exceptions.RequestException as e:
+        print("Error during task extraction:", e)
+        return None
+
     
 
 # If modifying these scopes, delete the file token.json.
@@ -227,6 +297,57 @@ def add_task_from_string(input_string, duration_in_minutes=30, calendar_name="AI
     except Exception as e:
         print(f"An error occurred: {e}")
 
+
+def extract_tasks(transcription):
+    url = "https://api.cerebras.ai/v1/chat/completions"
+    token = "csk-5mjnmycyndxxwpe5xnwrp6jwmfwvd2fwctcdtje694nt9pw2"  # Replace with your API key
+
+    request_data = {
+        "model": "llama3.1-8b",
+        "stream": False,
+        "messages": [
+            {
+                "content": f"Extract tasks from the following text: {transcription}",
+                "role": "user",
+            },
+        ],
+        "temperature": 0,
+        "max_tokens": -1,
+        "seed": 0,
+        "top_p": 1,
+    }
+
+    try:
+        response = requests.post(
+            url,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {token}",
+            },
+            json=request_data,
+        )
+
+        response.raise_for_status()
+        data = response.json()
+
+        if data and "choices" in data and len(data["choices"]) > 0:
+            new_tasks = data["choices"][0]["message"]["content"]
+            numbered_tasks = [
+                task.lstrip("0123456789. ").strip()
+                for task in new_tasks.split("\n")
+                if task.strip() and task.strip()[0].isdigit()
+            ]
+            tasks = [
+                {"id": idx, "text": task, "completed": False}
+                for idx, task in enumerate(numbered_tasks, start=1)
+            ]
+            return tasks
+        else:
+            print("Unexpected response format:", data)
+            return None
+    except requests.exceptions.RequestException as e:
+        print("Error during task extraction:", e)
+        return None
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ function App() {
         transcript += event.results[i][0].transcript;
         if (event.results[i].isFinal) {
           setTranscription((prev) => prev + transcript + " ");
-          extractTasks(transcript);
+          // extractTasks(transcript);
         }
       }
     };
@@ -55,61 +55,7 @@ function App() {
     setIsRecording(false);
   };
 
-  const extractTasks = (transcription) => {
-    const url = "https://api.cerebras.ai/v1/chat/completions";
-    const token = "csk-5mjnmycyndxxwpe5xnwrp6jwmfwvd2fwctcdtje694nt9pw2"; // Replace with your API key
 
-    const requestData = {
-      model: "llama3.1-8b",
-      stream: false,
-      messages: [
-        {
-          content: `Extract tasks from the following text: ${transcription}`,
-          role: "user",
-        },
-      ],
-      temperature: 0,
-      max_tokens: -1,
-      seed: 0,
-      top_p: 1,
-    };
-
-    fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + token,
-      },
-      body: JSON.stringify(requestData),
-    })
-      .then((response) => response.json())
-      .then((data) => {
-        if (data && data.choices && data.choices.length > 0) {
-          const newTasks = data.choices[0].message.content;
-          const numberedTasks = newTasks
-            .split("\n")
-            .filter((line) => /^\d+\.\s/.test(line))
-            .map((task) => task.replace(/^\d+\.\s/, ""));
-
-          setTasks((prevTasks) =>
-            prevTasks.concat(
-              numberedTasks.map((task) => ({
-                id: taskCounterRef.current++,
-                text: task,
-                completed: false,
-              }))
-            )
-          );
-        } else {
-          console.error("Unexpected response format:", data);
-          alert("No tasks could be extracted from the transcription.");
-        }
-      })
-      .catch((error) => {
-        console.error("Error during task extraction:", error);
-        alert("An error occurred while extracting tasks.");
-      });
-  };
 
   const toggleTaskCompletion = (id) => {
     setTasks((prevTasks) =>
@@ -136,7 +82,7 @@ function App() {
         headers: {
           "Content-Type" : "application/json",
         },
-        body: JSON.stringify({text: inputText})
+        body: JSON.stringify({text: transcription})
       })
 
       const data = await response.json();
